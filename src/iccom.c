@@ -408,7 +408,7 @@
 		error_action;						\
 	}
 #define ICCOM_CHECK_CLOSING(msg, closing_action)			\
-	if (iccom->p->closing) {					\
+	if (atomic_read(&iccom->p->closing)) {				\
 		iccom_warning("%s: device is closing; "msg"\n"		\
 			      , __func__);				\
 		closing_action;						\
@@ -648,7 +648,7 @@ struct iccom_message_storage
 	iccom_msg_ready_callback_ptr_t message_ready_global_callback;
 	void *global_consumer_data;
 
-	int uncommitted_finalized_count;
+	atomic_t uncommitted_finalized_count;
 };
 
 // Iccom device statistics
@@ -680,7 +680,7 @@ struct iccom_dev_statistics {
 	unsigned long long messages_received_ok;
 	unsigned long packages_in_tx_queue;
 	unsigned long long total_consumers_bytes_received_ok;
-	unsigned long messages_ready_in_storage;
+	atomic_t messages_ready_in_storage;
 
 // TODO:
 //	unsigned long long packets_sent;
@@ -823,7 +823,7 @@ struct iccom_dev_private {
 #endif
 	struct work_struct consumer_delivery_work;
 
-	bool closing;
+	atomic_t closing;
 
 	struct iccom_dev_statistics statistics;
 
@@ -2481,7 +2481,7 @@ void iccom_msg_storage_clear(struct iccom_message_storage *storage)
 		__iccom_msg_storage_free_channel(
 			__iccom_msg_storage_anchor2channel(first));
 	}
-	storage->uncommitted_finalized_count = 0;
+	atomic_set(&storage->uncommitted_finalized_count, 0);
 	mutex_unlock(&storage->lock);
 	storage->message_ready_global_callback = NULL;
 	storage->global_consumer_data = NULL;
@@ -2585,7 +2585,7 @@ int iccom_msg_storage_append_data_to_message(
 
 	if (final) {
 		msg->finalized = true;
-		__sync_add_and_fetch(&storage->uncommitted_finalized_count, 1);
+		atomic_inc(&storage->uncommitted_finalized_count);
 	}
 
 	return 0;
@@ -2775,7 +2775,7 @@ static void iccom_msg_storage_commit(
 			    , channel_anchor) {
 		__iccom_msg_storage_channel_commit(channel_rec);
 	}
-	storage->uncommitted_finalized_count = 0;
+	atomic_set(&storage->uncommitted_finalized_count, 0);
 	mutex_unlock(&storage->lock);
 }
 
@@ -2792,7 +2792,7 @@ static int iccom_msg_storage_init(
 #endif
 	INIT_LIST_HEAD(&storage->channels_list);
 	mutex_init(&storage->lock);
-	storage->uncommitted_finalized_count = 0;
+	atomic_set(&storage->uncommitted_finalized_count, 0);
 	storage->message_ready_global_callback = NULL;
 	storage->global_consumer_data = NULL;
 	return 0;
@@ -2809,7 +2809,7 @@ static inline int iccom_msg_storage_uncommitted_finalized_count(
 #ifdef ICCOM_DEBUG
 	ICCOM_MSG_STORAGE_CHECK_STORAGE("", return -ENODEV);
 #endif
-	return storage->uncommitted_finalized_count;
+	return atomic_read(&storage->uncommitted_finalized_count);
 }
 
 /* -------------------------- UTILITIES ---------------------------------*/
@@ -3623,9 +3623,7 @@ static int __iccom_process_package_payload(
 	iccom->p->statistics.messages_received_ok += finalized;
 	iccom->p->statistics.total_consumers_bytes_received_ok
 			+= consumer_bytes_parsed_total;
-	__sync_add_and_fetch(
-			&iccom->p->statistics.messages_ready_in_storage
-			, finalized);
+	atomic_add(finalized, &iccom->p->statistics.messages_ready_in_storage);
 
 	if (finalized > 0) {
 		// notify consumer if there is any new ready messages
@@ -3868,9 +3866,7 @@ static void __iccom_consumer_notification_routine(
 	int passed = iccom_msg_storage_pass_ready_data_to_consumer(
 					     &iccom_p->rx_messages);
 	if (passed >= 0) {
-		__sync_add_and_fetch(
-			    &iccom_p->statistics.messages_ready_in_storage
-			    , -passed);
+		atomic_add(-passed, &iccom_p->statistics.messages_ready_in_storage);
 	}
 }
 
@@ -4058,7 +4054,7 @@ static ssize_t __iccom_statistics_read(struct file *file
 		       "packages: in tx queue:  %lu\n"
 		       "packets: received ok:  %llu\n"
 		       "messages: received ok:  %llu\n"
-		       "messages: ready rx:  %lu\n"
+		       "messages: ready rx:  %d\n"
 		       "bandwidth: consumer bytes received:\t%llu\n"
 		       "\n"
 		       "Note: this is only general statistical/monitoring"
@@ -4078,7 +4074,7 @@ static ssize_t __iccom_statistics_read(struct file *file
 		     , s->packages_in_tx_queue
 		     , s->packets_received_ok
 		     , s->messages_received_ok
-		     , s->messages_ready_in_storage
+		     , atomic_read(&s->messages_ready_in_storage)
 		     , s->total_consumers_bytes_received_ok);
 	len++;
 
@@ -4395,8 +4391,7 @@ int iccom_read_message(struct iccom_dev *iccom
 		return 0;
 	}
 
-	__sync_add_and_fetch(
-		    &iccom->p->statistics.messages_ready_in_storage, -1);
+	atomic_add(-1, &iccom->p->statistics.messages_ready_in_storage);
 
 	*msg_data_ptr__out = msg->data;
 	*buf_size__out = msg->length;
@@ -4508,7 +4503,7 @@ int iccom_init(struct iccom_dev *iccom)
 	INIT_WORK(&iccom->p->consumer_delivery_work
 		  , __iccom_consumer_notification_routine);
 
-	iccom->p->closing = false;
+	atomic_set(&iccom->p->closing, false);
 
 	// Initializing transport layer and start communication
 	res = iccom->xfer_iface.init(iccom->xfer_device
@@ -4584,8 +4579,8 @@ void iccom_print_statistics(struct iccom_dev *iccom)
 		       , "MESSAGES: received OK:\t%llu"
 		       , iccom->p->statistics.messages_received_ok);
 	iccom_info_raw(ICCOM_LOG_INFO_KEY_LEVEL
-		       , "MESSAGES: ready in RX storage:\t%lu"
-		       , iccom->p->statistics.messages_ready_in_storage);
+		       , "MESSAGES: ready in RX storage:\t%d"
+		       , atomic_read(&iccom->p->statistics.messages_ready_in_storage));
 	iccom_info_raw(ICCOM_LOG_INFO_KEY_LEVEL
 		       , "BANDWIDTH: total consumer bytes received OK:\t%llu"
 		       , iccom->p->statistics.total_consumers_bytes_received_ok);
@@ -4616,9 +4611,7 @@ void iccom_close(struct iccom_dev *iccom)
 	// calls to given ICCom instance
 	bool expected_state = false;
 	bool dst_state = true;
-	bool res = __atomic_compare_exchange_n(&iccom->p->closing
-			, &expected_state, dst_state, false
-			, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+	bool res = atomic_cmpxchg(&iccom->p->closing, expected_state, dst_state);
 	if (!res) {
 		iccom_err("iccom is already closing now");
 		return;
