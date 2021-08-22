@@ -213,7 +213,7 @@ struct iccom_sockets_device {
 
         struct proc_dir_entry *proc_root;
 
-        struct file_operations loopback_ctl_ops;
+        struct proc_ops loopback_ctl_ops;
         struct proc_dir_entry *loopback_ctl_file;
 
         struct iccom_sk_loopback_mapping_rule *lback_map_rule;
@@ -817,8 +817,8 @@ static int __iccom_sk_loopback_ctl_init(
         memset(iccom_sk->lback_map_rule, 0, sizeof(*iccom_sk->lback_map_rule));
 
         // loopback control ops
-        iccom_sk->loopback_ctl_ops.read = &__iccom_sk_lback_rule_read;
-        iccom_sk->loopback_ctl_ops.write = &__iccom_sk_lback_rule_write;
+        iccom_sk->loopback_ctl_ops.proc_read = &__iccom_sk_lback_rule_read;
+        iccom_sk->loopback_ctl_ops.proc_write = &__iccom_sk_lback_rule_write;
 
         if (IS_ERR_OR_NULL(iccom_sk->proc_root)) {
                 iccom_socket_err("failed to create loopback control proc entry:"

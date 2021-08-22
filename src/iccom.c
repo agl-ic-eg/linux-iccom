@@ -831,7 +831,7 @@ struct iccom_dev_private {
 
 	struct proc_dir_entry *proc_root;
 
-	struct file_operations statistics_ops;
+	struct proc_ops statistics_ops;
 	struct proc_dir_entry *statistics_file;
 };
 
@@ -3965,8 +3965,7 @@ static inline int __iccom_statistics_init(struct iccom_dev *iccom)
 
 	// statistics access operations
 	memset(&iccom->p->statistics_ops, 0, sizeof(iccom->p->statistics_ops));
-	iccom->p->statistics_ops.read  = &__iccom_statistics_read;
-	iccom->p->statistics_ops.owner = THIS_MODULE;
+	iccom->p->statistics_ops.proc_read  = &__iccom_statistics_read;
 
 	if (IS_ERR_OR_NULL(iccom->p->proc_root)) {
 		iccom_err("failed to create statistics proc entry:"
