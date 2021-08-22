@@ -81,10 +81,6 @@ static void iccom_example_protocol_native_transfer_configuration_hook(
 
         const int SPI_FULL_WORD_SIZE_BITS = 32;
 
-        // the whole transfer is done at one burst
-        // (with single CS assertion) along the communicatiion
-        // contract
-        dst->burst_size_bits = xfer->size_bytes * 8;
         if (xfer->size_bytes * 8 >= SPI_FULL_WORD_SIZE_BITS) {
                 dst->bits_per_word = SPI_FULL_WORD_SIZE_BITS;
         } else {

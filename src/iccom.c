@@ -335,10 +335,10 @@
 
 #if ICCOM_VERBOSITY >= 2
 #define iccom_warning(fmt, ...)						\
-	pr_warning(ICCOM_LOG_PREFIX"%s: "fmt"\n", __func__		\
+	pr_warn(ICCOM_LOG_PREFIX"%s: "fmt"\n", __func__		\
 		   , ##__VA_ARGS__)
 #define iccom_warning_raw(fmt, ...)					\
-	pr_warning(ICCOM_LOG_PREFIX""fmt"\n", ##__VA_ARGS__)
+	pr_warn(ICCOM_LOG_PREFIX""fmt"\n", ##__VA_ARGS__)
 #else
 #define iccom_warning(fmt, ...)
 #define iccom_warning_raw(fmt, ...)
@@ -1277,7 +1277,7 @@ void iccom_dbg_printout_xfer(const struct full_duplex_xfer *const xfer)
 		return;
 	}
 	printk("Xfer ptr: %px\n", xfer);
-	printk("Xfer size: %u\n", xfer->size_bytes);
+	printk("Xfer size: %lu\n", xfer->size_bytes);
 	if (IS_ERR(xfer->data_tx)) {
 		printk("Xfer TX data ptr: BROKEN: %px\n", xfer->data_tx);
 	} else if (xfer->data_tx) {

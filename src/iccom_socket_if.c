@@ -84,7 +84,7 @@
 
 // The maximum client message size (client data size in bytes per message)
 #define ICCOM_SOCKET_MAX_MESSAGE_SIZE_BYTES 4096
-#define NETLINK_ICCOM 22
+#define NETLINK_ICCOM 23
 
 #define ICCOM_SOCKETS_CLOSE_POLL_PERIOD_JIFFIES msecs_to_jiffies(200)
 
@@ -108,7 +108,7 @@
         pr_err(ICCOM_SOCKETS_LOG_PREFIX"%s: "fmt"\n", __func__           \
                , ##__VA_ARGS__)
 #define iccom_socket_warning(fmt, ...)                                   \
-        pr_warning(ICCOM_SOCKETS_LOG_PREFIX"%s: "fmt"\n", __func__       \
+        pr_warn(ICCOM_SOCKETS_LOG_PREFIX"%s: "fmt"\n", __func__       \
                , ##__VA_ARGS__)
 #define iccom_socket_info(fmt, ...)                                      \
         pr_info(ICCOM_SOCKETS_LOG_PREFIX"%s: "fmt"\n", __func__          \
@@ -434,7 +434,7 @@ static int __iccom_socket_dispatch_msg_up(
 {
         if (data_size_bytes > ICCOM_SOCKET_MAX_MESSAGE_SIZE_BYTES) {
                 iccom_socket_err("received message is bigger than max"
-                                 "  allowed: %d > %d bytes; dropping;"
+                                 "  allowed: %ld > %d bytes; dropping;"
                                  , data_size_bytes
                                  , ICCOM_SOCKET_MAX_MESSAGE_SIZE_BYTES);
                 return -ENOMEM;
@@ -447,7 +447,7 @@ static int __iccom_socket_dispatch_msg_up(
 
         if (IS_ERR_OR_NULL(sk_buffer)) {
                 iccom_socket_err("could not allocate socket buffer,"
-                                 " req. size: %d"
+                                 " req. size: %ld"
                                  , NLMSG_SPACE(data_size_bytes));
                 return -EPIPE;
         }
@@ -893,7 +893,7 @@ static int __iccom_socket_protocol_device_init(
         //      transport protocol drivers, nor byte transfer protocol
         //      drivers
         const struct full_duplex_device transport
-                    = example_protocol_init_transport_layer();
+                    = iccom_example_protocol_init_transport_layer();
 
         // TODO: ultimate binding shall happen in the ultimate protocol
         //      driver and happen between specific instances of layers
