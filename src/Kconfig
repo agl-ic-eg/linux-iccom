@@ -101,14 +101,25 @@ config BOSCH_ICCOM_WORKQUEUE_MODE
 	            in theory the option which provides the lowest
 	            latency values expectation
 
-config BOSCH_ICCOM_EXAMPLE
-	tristate "The ICCom + SymSPI example protocol module"
-	depends on BOSCH_ICCOM_SOCKETS && BOSCH_ICCOM && BOSCH_SYMSPI
-	default y
+choice
+	prompt "Transport Layer"
+	default BOSCH_ICCOM_TRANSPORT_SYMSPI
 	help
-	  Adds the ICCom + SymSPI protocol configuration into
-	  the ICCom protocol options list, enabling ICCom to use
-	  it for communication.
+	  ICCOM transport layer selection
+
+config BOSCH_ICCOM_TRANSPORT_SYMSPI
+	bool "SYMSPI"
+	help
+	  This feature selects symspi module
+
+config BOSCH_ICCOM_TRANSPORT_DUMPER
+	bool "DUMPER"
+	help
+	  This feature selects dumper module
+	  for debug
+
+endchoice
+
 
 config BOSCH_ICCOM_TRANSPORT_MIRROR_V1
 	tristate "The transport level mirrored ICCom protocol driver"

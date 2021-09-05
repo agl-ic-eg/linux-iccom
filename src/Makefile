@@ -26,8 +26,7 @@ ifeq ($(CONFIG_BOSCH_ICCOM_TEST_MODULE), y)
     obj-m += iccom_test.o
 endif
 
-obj-$(CONFIG_BOSCH_ICCOM_SOCKETS) += iccom_socket_if.o
+obj-$(CONFIG_BOSCH_ICCOM_SOCKETS) += iccom_socket_if.o iccom-transport-helper.o
 
 # Custom protocol aggregator drivers
-obj-$(CONFIG_BOSCH_ICCOM_EXAMPLE) += iccom-example.o
 obj-$(CONFIG_BOSCH_ICCOM_TRANSPORT_MIRROR_V1) += iccom-transport-mirror-v1.o

@@ -25,4 +25,4 @@
 
 #include "../full_duplex_interface/full_duplex_interface.h"
 
-struct full_duplex_device iccom_example_protocol_init_transport_layer(void);
+struct full_duplex_device iccom_protocol_init_transport_layer(void);

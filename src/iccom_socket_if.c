@@ -38,7 +38,7 @@
 //      it is only temporary change while migration on graceful
 //      architecture is ongoing.
 // TODO: remove the dependency
-#include "./iccom-example.h"
+#include "./iccom-transport-helper.h"
 
 // DEV STACK
 // @@@@@@@@@@@@@
@@ -893,7 +893,7 @@ static int __iccom_socket_protocol_device_init(
         //      transport protocol drivers, nor byte transfer protocol
         //      drivers
         const struct full_duplex_device transport
-                    = iccom_example_protocol_init_transport_layer();
+                    = iccom_protocol_init_transport_layer();
 
         // TODO: ultimate binding shall happen in the ultimate protocol
         //      driver and happen between specific instances of layers
