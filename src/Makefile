@@ -5,6 +5,12 @@
 
 ccflags-y := -std=gnu99 -Wno-declaration-after-statement
 
+ifeq ($(CONFIG_BOSCH_ICCOM_TRANSPORT_SYMSPI), m)
+    ccflags-y += -DCONFIG_BOSCH_ICCOM_TRANSPORT_SYMSPI
+else ifeq ($(CONFIG_BOSCH_ICCOM_TRANSPORT_DUMPER), m)
+    ccflags-y += -DCONFIG_BOSCH_ICCOM_TRANSPORT_DUMPER
+endif
+
 ccflags-$(CONFIG_BOSCH_ICCOM_DEBUG) += -DICCOM_DEBUG
 ifeq ($(CONFIG_BOSCH_ICCOM_DEBUG), y)
     ccflags-y += -DDICCOM_DEBUG_CHANNEL=$(CONFIG_BOSCH_ICCOM_DEBUG_CHANNEL)
