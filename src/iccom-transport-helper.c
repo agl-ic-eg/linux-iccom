@@ -313,12 +313,14 @@ module_init(iccom_transport_helper_init);
 
 static void __exit iccom_transport_helper_exit(void)
 {
+#ifdef CONFIG_BOSCH_ICCOM_TRANSPORT_DUMPER
 	struct dumper_device *dev = &dumper_dev;
 	struct full_duplex_xfer *xfer = &dev->current_xfer;
 
 	cancel_work_sync(&dev->work);
 	kfree(xfer->data_tx);
 	kfree(xfer->data_rx_buf);
+#endif
 }
 module_exit(iccom_transport_helper_exit);
 
