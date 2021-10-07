@@ -47,6 +47,7 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 
 #include "../full_duplex_interface/full_duplex_interface.h"
 #include "iccom.h"
@@ -831,7 +832,11 @@ struct iccom_dev_private {
 
 	struct proc_dir_entry *proc_root;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0))
+	struct file_operations statistics_ops;
+#else
 	struct proc_ops statistics_ops;
+#endif
 	struct proc_dir_entry *statistics_file;
 };
 
@@ -3965,7 +3970,12 @@ static inline int __iccom_statistics_init(struct iccom_dev *iccom)
 
 	// statistics access operations
 	memset(&iccom->p->statistics_ops, 0, sizeof(iccom->p->statistics_ops));
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0))
+	iccom->p->statistics_ops.read  = &__iccom_statistics_read;
+	iccom->p->statistics_ops.owner = THIS_MODULE;
+#else
 	iccom->p->statistics_ops.proc_read  = &__iccom_statistics_read;
+#endif
 
 	if (IS_ERR_OR_NULL(iccom->p->proc_root)) {
 		iccom_err("failed to create statistics proc entry:"
