@@ -179,6 +179,11 @@ struct iccom_sk_loopback_mapping_rule {
         int shift;
 };
 
+struct iccom_socket_list {
+        struct net *net;
+        struct sock *socket;
+        struct list_head list;
+};
 // ICCom socket interface provider.
 //
 // @socket the socket we are working with
@@ -202,7 +207,7 @@ struct iccom_sk_loopback_mapping_rule {
 // @lback_map_rule the channel loopback mapping rule pointer,
 //      allocated on heap.
 struct iccom_sockets_device {
-        struct sock *socket;
+        struct iccom_socket_list sockets;
         struct task_struct *pump_task;
 
         struct iccom_dev iccom;
@@ -229,7 +234,7 @@ struct iccom_sockets_device {
 /* -------------------------- GLOBAL VARS -------------------------------*/
 
 // Singleton device for now.
-struct iccom_sockets_device __iccom_sockets_dev;
+static struct iccom_sockets_device __iccom_sockets_dev;
 
 /* --------------------- FORWARD DECLARATIONS ---------------------------*/
 
@@ -446,27 +451,6 @@ static int __iccom_socket_dispatch_msg_up(
         }
         const uint32_t dst_port_id = channel;
 
-        //   TODO: reuse allocated memory if possible
-        struct sk_buff *sk_buffer = alloc_skb(NLMSG_SPACE(data_size_bytes),
-                                              GFP_KERNEL);
-
-        if (IS_ERR_OR_NULL(sk_buffer)) {
-                iccom_socket_err("could not allocate socket buffer,"
-                                 " req. size: %ld"
-                                 , NLMSG_SPACE(data_size_bytes));
-                return -EPIPE;
-        }
-
-        struct nlmsghdr *nl_header = __nlmsg_put(sk_buffer, dst_port_id
-                                                 , 0, 0, data_size_bytes
-                                                 , 0);
-
-        memcpy(NLMSG_DATA(nl_header), data, data_size_bytes);
-
-        NETLINK_CB(sk_buffer).portid = 0;
-        NETLINK_CB(sk_buffer).dst_group = 0;
-        NETLINK_CB(sk_buffer).flags = 0;
-
         iccom_socket_dbg_raw("<- data to User space (ch. %d):"
                              , dst_port_id);
 #ifdef ICCOM_SOCKET_DEBUG
@@ -475,30 +459,48 @@ static int __iccom_socket_dispatch_msg_up(
                        , 0, 16, 1, data, data_size_bytes, true);
 #endif
 
-        int res = netlink_unicast(iccom_sk->socket, sk_buffer, dst_port_id
-                                  , MSG_DONTWAIT);
+        struct iccom_socket_list *entry;
+        int res;
+        list_for_each_entry(entry, &iccom_sk->sockets.list, list) {
+                struct sk_buff *sk_buffer = alloc_skb(NLMSG_SPACE(data_size_bytes),
+                                                      GFP_KERNEL);
 
-        if (res >= 0) {
+                if (IS_ERR_OR_NULL(sk_buffer)) {
+                        iccom_socket_err("could not allocate socket buffer,"
+                                         " req. size: %ld"
+                                         , NLMSG_SPACE(data_size_bytes));
+                        return -EPIPE;
+                }
+
+                struct nlmsghdr *nl_header = __nlmsg_put(sk_buffer, dst_port_id
+                                                         , 0, 0, data_size_bytes
+                                                         , 0);
+
+                memcpy(NLMSG_DATA(nl_header), data, data_size_bytes);
+
+                printk("entry: socket=%p", entry->socket);
+                NETLINK_CB(sk_buffer).portid = 0;
+                NETLINK_CB(sk_buffer).dst_group = 0;
+                NETLINK_CB(sk_buffer).flags = 0;
+
+                res = netlink_unicast(entry->socket, sk_buffer, dst_port_id,
+                                      MSG_DONTWAIT);
+                if (res != -ECONNREFUSED && res < 0)
+                        break;
+        }
+
+        if (res >= 0 || res == -ECONNREFUSED)
                 return 0;
-        }
 
-        switch (-res) {
-        // happens when no one listenes the port, which is
-        // not an error generally
-        case ECONNREFUSED: return 0;
-        default:
-                iccom_socket_err("Send to user space failed, err: %d"
-                                 , -res);
-        }
-
+        iccom_socket_err("Send to user space failed, err: %d", -res);
         return res;
 }
 
 // RETURNS:
 //      0: if success
 //      negated error code: if fails
-static int __iccom_socket_reg_socket_family(
-                struct iccom_sockets_device *iccom_sk)
+static int __iccom_socket_reg_socket_family(struct iccom_sockets_device *iccom_sk,
+                                            struct net *net)
 {
         struct netlink_kernel_cfg netlink_cfg = {
                         .groups = 0
@@ -508,33 +510,44 @@ static int __iccom_socket_reg_socket_family(
                         , .bind = NULL
                         , .compare = NULL
                     } ;
-        // TODO: optionally: add support for earlier versions of kernel
-        iccom_sk->socket = netlink_kernel_create(&init_net
-                                                 , NETLINK_ICCOM
-                                                 , &netlink_cfg);
+        struct iccom_socket_list *entry;
 
-        if (IS_ERR(iccom_sk->socket)) {
-                return PTR_ERR(iccom_sk->socket);
-        } else if (!iccom_sk->socket) {
+        entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+        if (!entry)
+                return -ENOMEM;
+
+        entry->socket = netlink_kernel_create(net, NETLINK_ICCOM, &netlink_cfg);
+        if (IS_ERR(entry->socket)) {
+                return PTR_ERR(entry->socket);
+        } else if (!entry->socket) {
                 iccom_socket_err("could not create kernel netlink socket"
                                  " for family: %d", NETLINK_ICCOM);
                 return -ENODEV;
         }
+
+        list_add_tail(&entry->list, &iccom_sk->sockets.list);
+
         return 0;
 }
 
 // Unregisters iccom socket family.
-static void __iccom_socket_unreg_socket_family(
-                struct iccom_sockets_device *iccom_sk)
+static void __iccom_socket_unreg_socket_family(struct iccom_sockets_device *iccom_sk,
+                                               struct net *net)
 {
-        if (IS_ERR_OR_NULL(iccom_sk)
-                    || IS_ERR_OR_NULL(iccom_sk->socket)) {
-                return;
+        struct iccom_socket_list *entry = NULL;
+
+        list_for_each_entry(entry, &iccom_sk->sockets.list, list) {
+                if (entry->net == net) {
+                        netlink_kernel_release(entry->socket);
+                        list_del(&entry->list);
+                        if (list_empty(&iccom_sk->sockets.list)) {
+                                iccom_sk->exiting = true;
+                                complete(&iccom_sk->socket_closed);
+                        }
+                        kfree(entry);
+                        break;
+                }
         }
-        iccom_sk->exiting = true;
-        netlink_kernel_release(iccom_sk->socket);
-        iccom_sk->socket = NULL;
-        complete(&iccom_sk->socket_closed);
 }
 
 // Provides an ability to read loopback rule from User Space.
@@ -934,7 +947,6 @@ static int __iccom_socket_device_close(
         // order matters
         __iccom_sk_loopback_ctl_close(iccom_sk);
         __iccom_sk_procfs_close(iccom_sk);
-        __iccom_socket_unreg_socket_family(iccom_sk);
         __iccom_socket_protocol_device_close(iccom_sk);
         return 0;
 }
@@ -953,14 +965,9 @@ static int __iccom_socket_device_init(
         init_completion(&iccom_sk->socket_closed);
         init_completion(&iccom_sk->pump_main_loop_done);
 
-        // order matters
-        int res = __iccom_socket_reg_socket_family(iccom_sk);
-        if (res < 0) {
-                goto failed;
-        }
-        iccom_socket_info_raw("opened kernel netlink socket: %px"
-                              , iccom_sk->socket);
-        res = __iccom_socket_protocol_device_init(iccom_sk);
+        INIT_LIST_HEAD(&__iccom_sockets_dev.sockets.list);
+
+        int res = __iccom_socket_protocol_device_init(iccom_sk);
         if (res < 0) {
                 goto failed;
         }
@@ -980,6 +987,21 @@ failed:
 
 /* --------------------- MODULE HOUSEKEEPING SECTION ------------------- */
 
+static int __net_init iccom_netlink_init(struct net *net)
+{
+        return __iccom_socket_reg_socket_family(&__iccom_sockets_dev, net);
+}
+
+static void __net_exit iccom_netlink_exit(struct net *net)
+{
+        __iccom_socket_unreg_socket_family(&__iccom_sockets_dev, net);
+}
+
+static struct pernet_operations iccom_netlink_net_ops = {
+        .init = iccom_netlink_init,
+        .exit = iccom_netlink_exit,
+};
+
 static int __init iccom_socket_module_init(void)
 {
         iccom_socket_info("loading module");
@@ -990,7 +1012,7 @@ static int __init iccom_socket_module_init(void)
                 return res;
         }
         iccom_socket_info("module loaded");
-        return 0;
+        return register_pernet_subsys(&iccom_netlink_net_ops);
 }
 
 static void __exit iccom_socket_module_exit(void)
@@ -1002,6 +1024,7 @@ static void __exit iccom_socket_module_exit(void)
                                  , -res);
         }
         iccom_socket_info("module unloaded");
+        unregister_pernet_subsys(&iccom_netlink_net_ops);
 }
 
 module_init(iccom_socket_module_init);
